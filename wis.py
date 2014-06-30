@@ -123,21 +123,20 @@ class Connection:
     def __init__(self, username, password):
         self.username = username
         self.password = password
-        self.status = None
         self.checkLogin()
 
     def checkConnection(self):
         """Kontrola pripojeni. Vraci rizeni az ve chvili, kdy je overene
         pripojeni
         """
-        try:
-            testUrl = 'http://www.fit.vutbr.cz/'
-            urllib.request.urlopen(testUrl, timeout=10)
-            self.status = "ok"
-            return
-        except:
-            self.status = "nedostupne"
-            pass
+        while True:
+            try:
+                testUrl = 'http://www.fit.vutbr.cz/'
+                urllib.request.urlopen(testUrl, timeout=10)
+                return
+            except:
+                sleep(2)
+                pass
 
     def websiteSource(self, url, coding):
         """Ziskani zdrojoveho HTML/XML kodu pro ziskani udaju o
