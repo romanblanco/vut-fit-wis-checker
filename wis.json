@@ -1,0 +1,18 @@
+{
+  "wis": {
+    "user": "xlogin00",
+    "pass": "he5lonawis",
+    "time": 20,
+    "cmd": "aplay band.wav"
+  },
+  "courses": [
+    "IPZ",
+    "IMS",
+    "ITU",
+    "IMP"
+  ],
+  "terms": [
+    "https://wis.fit.vutbr.cz/FIT/st/course-sl.php?id=556283&item=51392",
+    "https://wis.fit.vutbr.cz/FIT/st/course-sl.php?id=556282&item=50044"
+  ]
+}

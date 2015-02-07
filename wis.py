@@ -5,11 +5,11 @@ import os
 import sys
 import signal
 import re
-import configparser
+import json
 import urllib.request
 import xml.etree.ElementTree as ElementTree
 from getpass import getpass
-from time import sleep, ctime
+from time import sleep
 
 
 def main():
@@ -18,58 +18,58 @@ def main():
     courses = Courses(connection, app.courses)
     terms = Terms(connection, app.terms)
     while True:
-        connection.checkConnection()
+        if not connection.checkConnection():
+            app.loop()
+            continue
         courses.loadCourses()
         terms.loadTerms()
+        app.checkNewScore(terms, courses)
+        app.showScore(terms, courses)
+        # zobrazit vysledky a ukoncit skript
         showCond = (len(sys.argv) == 2 and sys.argv[1] == "show")
-        if not showCond:
-            app.checkNewScore(terms, courses)
-            sleep(app.time)
-        else:
-            app.showScore(terms, courses)
+        if showCond:
             break
+        app.loop()
 
 
 class Application:
-    """Zakladni funkce aplikace - nacteni konfiguracnich souboru, kontrola
-    noveho hodnoceni, vypsani hodnoceni
-    """
+    """Zakladni funkce aplikace. Nacteni konfiguracnich souboru,
+    kontrola noveho hodnoceni, vypsani hodnoceni"""
 
     def __init__(self):
         self.username = None
         self.password = None
-        self.time = 300
+        self.time = 90
         self.notifyCmd = None
         self.courses = None
         self.terms = None
         self.loadConfig()
 
     def loadConfig(self):
-        """Ze souboru 'wis.ini' nacte konfiguraci aplikace. Pokud nektere z
+        """Ze souboru 'wis.json' nacte konfiguraci aplikace. Pokud nektere z
         potrebnych polozek (login, heslo) v souboru nenalezne, bude pozadovat
         jejich rucni zadani
         """
-        config = configparser.ConfigParser()
         try:
-            config.read('wis.ini')
+            with open('wis.json') as configFile:
+                config = json.load(configFile)
+        except ValueError:
+            print("⚑ Chyba v konfiguracnim souboru")
+            sys.exit(4)
         except:
-            sys.stderr.write("! Chyba v konfiguracnim souboru\n")
-            os._exit(1)
-        # nacteni nastaveni z konfiguracniho souboru
-        if 'WIS' in config:
-            self.username = config.get('WIS', 'user', fallback=None)
-            self.password = config.get('WIS', 'pass', fallback=None)
-            self.time = int(config.get('WIS', 'time', fallback=300))
-            self.notifyCmd = config.get('WIS', 'cmd', fallback=None)
-        if 'courses' in config:
-            self.courses = config.get('courses', 'course', fallback=None)
-        if self.courses is not None:
-            self.courses = self.courses.split('\n')
-        if 'terms' in config:
-            self.terms = config.get('terms', 'term', fallback=None)
-        if self.terms is not None:
-            self.terms = self.terms.split('\n')
-        # rucni zadani prihl. udaju pokud nebyly v konfiguracnim souboru
+            config = None
+            pass
+        # nacteni nastaveni
+        if config and 'wis' in config:
+            self.username = config['wis'].get('user')
+            self.password = config['wis'].get('pass')
+            self.time = config['wis'].get('time')
+            self.notifyCmd = config['wis'].get('cmd')
+        if config and 'courses' in config:
+            self.courses = config.get('courses')
+        if config and 'terms' in config:
+            self.terms = config.get('terms')
+        # rucni zadani prihlasovacich udaju, pokud nebyly nastaveny
         if self.username is None:
             self.username = input("Login: ")
         if self.password is None:
@@ -88,23 +88,23 @@ class Application:
             courses.changes = [(old, new) for old, new in
                                zip(courses.oldrecord, courses.newrecord)
                                if new != old]
-        # vypsani zmen + notifikace
+        # vypsani zmen
         if terms.changes or courses.changes:
+            print(terms.changes)
             if terms.changes:
-                # pole: [predmet] [hodnoceni] [popis]
                 for old, new in terms.changes:
-                    print(old[0] + ' ' + old[1] + '\t->\t' +
+                    print(old[0] + ' ' + old[1] + '\t➜\t' +
                           new[0] + ' ' + new[1] + '\t' + new[2])
             if courses.changes:
-                # pole: [predmet] [hodnoceni]
                 for old, new in courses.changes:
-                    print(old[0] + ' ' + old[1] + '\t->\t' +
+                    print(old[0] + ' ' + old[1] + '\t➜\t' +
                           new[0] + ' ' + new[1])
             if self.notifyCmd:
                 os.system(self.notifyCmd)
 
     def showScore(self, terms, courses):
         """Vypise nactene hodnoceni"""
+        # pouze vypsani sledovanych kurzu/terminu
         if courses.newrecord:
             print("Predmety:\n")
             for course in courses.newrecord:
@@ -116,9 +116,19 @@ class Application:
             for term in terms.newrecord:
                 print(term[0] + '\t' + term[1] + '\t' + term[2])
 
+    def loop(self):
+        """Stara se o opakovani overovani hodnoceni podle nastaveneho
+        intervalu"""
+        sys.stdout.write('\n')
+        for i in range(self.time, 0, -1):
+            sys.stdout.write('\rNasledujici aktualizace: %d ' % i)
+            sys.stdout.flush()
+            sleep(1)
+        os.system('cls' if os.name == 'nt' else 'clear')
+
 
 class Connection:
-    """Obstarava prace vyzadujici pripojeni k internetu"""
+    """Trida obstarava prace vyzadujici pripojeni k internetu"""
 
     def __init__(self, username, password):
         self.username = username
@@ -126,20 +136,17 @@ class Connection:
         self.checkLogin()
 
     def checkConnection(self):
-        """Kontrola pripojeni. Vraci rizeni az ve chvili, kdy je overene
-        pripojeni
-        """
+        """Kontrola pripojeni. Vraci True, pokud je dostupne pripojeni"""
         while True:
             try:
                 testUrl = 'http://www.fit.vutbr.cz/'
                 urllib.request.urlopen(testUrl, timeout=10)
-                return
+                return True
             except:
-                sleep(2)
-                pass
+                return False
 
     def websiteSource(self, url, coding):
-        """Ziskani zdrojoveho HTML/XML kodu pro ziskani udaju o
+        """Ziskani zdrojoveho HTML / XML kodu pro ziskani udaju o
         hodnoceni
         """
         try:
@@ -162,8 +169,8 @@ class Connection:
         testUrl = 'https://wis.fit.vutbr.cz/FIT/st/get-courses.php'
         source = self.websiteSource(testUrl, 'utf-8')
         if source is None:
-            sys.stderr.write("! Nepodarilo se prihlasit k WISu\n")
-            os._exit(2)
+            print("⚑ Nepodarilo se prihlasit k informacnimu systemu")
+            sys.exit(1)
 
 
 class Courses:
@@ -182,15 +189,15 @@ class Courses:
         """
         url = 'https://wis.fit.vutbr.cz/FIT/st/get-courses.php'
         source = self.connection.websiteSource(url, 'utf-8')
-        try:
-            root = ElementTree.fromstring(source)
-            result = list()
-            for entry in root.iter('course'):
-                # result = pole s nactenym hodnocenim
-                result.append([entry.get('abbrv'), entry.get('points')])
-        except:
-            sys.stderr.write("! Chyba pri nacitani XML zdroje\n")
-            os._exit(3)
+        # pokud se nepodari nacist XML
+        if not source:
+            print("⚑ Chyba pri nacitani XML zdroje")
+            return
+        root = ElementTree.fromstring(source)
+        result = list()
+        for entry in root.iter('course'):
+            # result = pole s nactenym hodnocenim
+            result.append([entry.get('abbrv'), entry.get('points')])
         # poznamenani stareho hodnoceni a nacteni noveho
         self.oldrecord = self.newrecord
         if self.courses is None:
@@ -219,7 +226,7 @@ class Terms:
         # poznamenani stareho hodnoceni a nacteni noveho
         self.oldrecord = self.newrecord
         self.newrecord = list()
-        for url in self.terms[:]:
+        for url in self.terms:
             source = self.connection.websiteSource(url, 'ISO-8859-2')
             # nacteni informaci z html stranky regexem
             try:
@@ -230,8 +237,7 @@ class Terms:
                 self.newrecord.append([courseName.group(1), points.group(1),
                                       termName.group(1), url])
             except:
-                sys.stderr.write("! Nelze nacist informace o terminu: " +
-                                 url + "\n")
+                print("⚑ Nelze nacist informace o terminu: " + url)
                 self.terms.remove(url)
                 continue
 
@@ -239,7 +245,7 @@ if __name__ == '__main__':
 
     def signal_handler(signal, frame):
         """Pri zachyceni signalu ukonci skript"""
-        os._exit(0)
+        sys.exit(0)
 
     signal.signal(signal.SIGINT, signal_handler)
     main()
