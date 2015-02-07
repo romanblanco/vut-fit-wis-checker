@@ -43,6 +43,7 @@ class Application:
         self.notifyCmd = None
         self.courses = None
         self.terms = None
+        self.newScore = ""
         self.loadConfig()
 
     def loadConfig(self):
@@ -88,17 +89,17 @@ class Application:
             courses.changes = [(old, new) for old, new in
                                zip(courses.oldrecord, courses.newrecord)
                                if new != old]
-        # vypsani zmen
+        # nacteni zmen
         if terms.changes or courses.changes:
-            print(terms.changes)
-            if terms.changes:
-                for old, new in terms.changes:
-                    print(old[0] + ' ' + old[1] + '\t➜\t' +
-                          new[0] + ' ' + new[1] + '\t' + new[2])
+            status = '✖ ' if terms.changes and not courses.changes else '✔ '
             if courses.changes:
                 for old, new in courses.changes:
-                    print(old[0] + ' ' + old[1] + '\t➜\t' +
-                          new[0] + ' ' + new[1])
+                    self.newScore += (status + old[0] + '\t' + old[1]
+                                      + ' ➜ ' + new[1] + '\n')
+            if terms.changes:
+                for old, new in terms.changes:
+                    self.newScore += (status + old[0] + '\t' + old[1]
+                                      + ' ➜ ' + new[1] + '\t' + new[2] + '\n')
             if self.notifyCmd:
                 os.system(self.notifyCmd)
 
@@ -115,6 +116,10 @@ class Application:
             print("Terminy:\n")
             for term in terms.newrecord:
                 print(term[0] + '\t' + term[1] + '\t' + term[2])
+        if self.newScore != "":
+            print("\nNove hodnoceni:\n")
+            print(self.newScore)
+
 
     def loop(self):
         """Stara se o opakovani overovani hodnoceni podle nastaveneho
