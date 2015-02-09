@@ -9,11 +9,12 @@ import json
 import urllib.request
 import xml.etree.ElementTree as ElementTree
 from getpass import getpass
-from time import sleep
+from time import sleep, strftime
 
 
 def main():
-    app = Application()
+    iterate = not (len(sys.argv) == 2 and sys.argv[1] == "show")
+    app = Application(iterate)
     connection = Connection(app.username, app.password)
     courses = Courses(connection, app.courses)
     terms = Terms(connection, app.terms)
@@ -23,11 +24,9 @@ def main():
             continue
         courses.loadCourses()
         terms.loadTerms()
-        app.checkNewScore(terms, courses)
-        app.showScore(terms, courses)
-        # zobrazit vysledky a ukoncit skript
-        showCond = (len(sys.argv) == 2 and sys.argv[1] == "show")
-        if showCond:
+        if app.newScore(terms, courses):
+            app.showScore(terms, courses)
+        if not app.iterate:
             break
         app.loop()
 
@@ -36,14 +35,15 @@ class Application:
     """Zakladni funkce aplikace. Nacteni konfiguracnich souboru,
     kontrola noveho hodnoceni, vypsani hodnoceni"""
 
-    def __init__(self):
+    def __init__(self, iterate):
+        self.iterate = iterate
         self.username = None
         self.password = None
-        self.time = 90
+        self.time = None
         self.notifyCmd = None
         self.courses = None
         self.terms = None
-        self.newScore = ""
+        self.change = ""
         self.loadConfig()
 
     def loadConfig(self):
@@ -64,7 +64,7 @@ class Application:
         if config and 'wis' in config:
             self.username = config['wis'].get('user')
             self.password = config['wis'].get('pass')
-            self.time = config['wis'].get('time')
+            self.time = config['wis'].get('time', 90)
             self.notifyCmd = config['wis'].get('cmd')
         if config and 'courses' in config:
             self.courses = config.get('courses')
@@ -74,13 +74,15 @@ class Application:
         if self.username is None:
             self.username = input("Login: ")
         if self.password is None:
-            self.password = getpass(prompt="Password: ", stream=None)
+            self.password = getpass(prompt="Heslo: ", stream=None)
 
-    def checkNewScore(self, terms, courses):
+    def newScore(self, terms, courses):
         """Porovna stary zaznam hodnoceni s novym a v pripade zmen vypise
         informaci o novem hodnoceni
         """
         # zjisteni zmen v hodnoceni
+        if not terms.oldrecord or not courses.oldrecord:
+            return True  # prvni iterace, chci zobrazit hodnoceni
         if terms.oldrecord:
             terms.changes = [(old, new) for old, new in
                              zip(terms.oldrecord, terms.newrecord)
@@ -94,18 +96,22 @@ class Application:
             status = '✖ ' if terms.changes and not courses.changes else '✔ '
             if courses.changes:
                 for old, new in courses.changes:
-                    self.newScore += (status + old[0] + '\t' + old[1]
-                                      + ' ➜ ' + new[1] + '\n')
+                    self.change += (status + old[0] + '\t' + old[1]
+                                    + ' ➜ ' + new[1] + '\n')
             if terms.changes:
                 for old, new in terms.changes:
-                    self.newScore += (status + old[0] + '\t' + old[1]
-                                      + ' ➜ ' + new[1] + '\t' + new[2] + '\n')
+                    self.change += (status + old[0] + '\t' + old[1]
+                                    + ' ➜ ' + new[1] + '\t' + new[2] + '\n')
             if self.notifyCmd:
                 os.system(self.notifyCmd)
+            return True
+        else:
+            return False
 
     def showScore(self, terms, courses):
         """Vypise nactene hodnoceni"""
-        # pouze vypsani sledovanych kurzu/terminu
+        if self.iterate:
+            clear()
         if courses.newrecord:
             print("Predmety:\n")
             for course in courses.newrecord:
@@ -116,20 +122,19 @@ class Application:
             print("Terminy:\n")
             for term in terms.newrecord:
                 print(term[0] + '\t' + term[1] + '\t' + term[2])
-        if self.newScore != "":
-            print("\nNove hodnoceni:\n")
-            print(self.newScore)
-
+        if self.change != "":
+            print('')
+            print("Nove hodnoceni:\n")
+            print(self.change)
+        elif self.iterate:
+            print('')
 
     def loop(self):
         """Stara se o opakovani overovani hodnoceni podle nastaveneho
         intervalu"""
-        sys.stdout.write('\n')
-        for i in range(self.time, 0, -1):
-            sys.stdout.write('\rNasledujici aktualizace: %d ' % i)
-            sys.stdout.flush()
-            sleep(1)
-        os.system('cls' if os.name == 'nt' else 'clear')
+        sys.stdout.write('\rPosledni aktualizace ' + strftime('%X'))
+        sleep(self.time)
+        sys.stdout.flush()
 
 
 class Connection:
@@ -248,8 +253,15 @@ class Terms:
 
 if __name__ == '__main__':
 
+    sys.stdout.write("\x1b]2;VUT FIT WIS Checker\x07")
+
+    def clear():
+        """Prikaz pro vycisteni obrazu terminalu"""
+        os.system('cls' if os.name == 'nt' else 'clear')
+
     def signal_handler(signal, frame):
         """Pri zachyceni signalu ukonci skript"""
+        print("\nBye bye...")
         sys.exit(0)
 
     signal.signal(signal.SIGINT, signal_handler)
