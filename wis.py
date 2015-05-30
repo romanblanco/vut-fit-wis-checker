@@ -243,7 +243,7 @@ class Terms:
                 courseName = re.search(r'<title>([A-Z0-9]{3,4})', source)
                 termName = re.search(r'.*<h[2-3]>(.+)(?= - .+<)', source)
                 points = re.search(r'<td align=right><b>'
-                                   '([0-9]+( \(?[0-9]+\)?)?)', source)
+                                   '([0-9]+( \(?[0-9,]+\)?)?)', source)
                 self.newrecord.append([courseName.group(1), points.group(1),
                                       termName.group(1), url])
             except:
